@@ -1,12 +1,34 @@
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
 
-a = int (input("primeiro valor: "))
-b = int (input("segundo valor: "))
-c = int (input("terceiro valor: "))
+# Fixing random state for reproducibility
+np.random.seed(19680801)
 
-if a > b and a > c:
-    print("o maior número é {}".format(a))
-elif b > a and b > c:
-    print("o maior número é {}".format(b))
-else:
-    print("o maior numero é {}".format (c))
-print("final do programa")
+# Example data
+people = ('Tom', 'Dick', 'Harry', 'Slim', 'Jim')
+y_pos = np.arange(len(people))
+performance = 3 + 10 * np.random.rand(len(people))
+error = np.random.rand(len(people))
+
+fig, ax = plt.subplots()
+
+hbars = ax.barh(y_pos, performance, xerr=error, align='center')
+ax.set_yticks(y_pos)
+ax.set_yticklabels(people)
+ax.invert_yaxis()  # labels read top-to-bottom
+ax.set_xlabel('Performance')
+ax.set_title('How fast do you want to go today?')
+
+# Label with specially formatted floats
+ax.bar_label(hbars, fmt='%.2f')
+ax.set_xlim(right=15)  # adjust xlim to fit labels
+
+plt.show()
+
+df=pd.read_excel("projeção.xlsx")
+print(df.columns)
+x=[1,2,3]
+y=[1,2,3]
+plt.plot(x,y)
+plt.show()
