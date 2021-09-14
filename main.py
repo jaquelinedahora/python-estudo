@@ -1,34 +1,16 @@
-import matplotlib.pyplot as plt
-import pandas as pd
-import numpy as np
+# This is a sample Python script.
 
-# Fixing random state for reproducibility
-np.random.seed(19680801)
+# Press Shift+F10 to execute it or replace it with your code.
+# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
 
-# Example data
-people = ('Tom', 'Dick', 'Harry', 'Slim', 'Jim')
-y_pos = np.arange(len(people))
-performance = 3 + 10 * np.random.rand(len(people))
-error = np.random.rand(len(people))
 
-fig, ax = plt.subplots()
+def print_hi(name):
+    # Use a breakpoint in the code line below to debug your script.
+    print(f'Hi, {name}')  # Press Ctrl+F8 to toggle the breakpoint.
 
-hbars = ax.barh(y_pos, performance, xerr=error, align='center')
-ax.set_yticks(y_pos)
-ax.set_yticklabels(people)
-ax.invert_yaxis()  # labels read top-to-bottom
-ax.set_xlabel('Performance')
-ax.set_title('How fast do you want to go today?')
 
-# Label with specially formatted floats
-ax.bar_label(hbars, fmt='%.2f')
-ax.set_xlim(right=15)  # adjust xlim to fit labels
+# Press the green button in the gutter to run the script.
+if __name__ == '__main__':
+    print_hi('PyCharm')
 
-plt.show()
-
-df=pd.read_excel("projeção.xlsx")
-print(df.columns)
-x=[1,2,3]
-y=[1,2,3]
-plt.plot(x,y)
-plt.show()
+# See PyCharm help at https://www.jetbrains.com/help/pycharm/
