@@ -1,0 +1,441 @@
+# PROJEÇÕES
+## Imports Bibliotecas
+import pandas as pd
+import warnings
+from prophet import Prophet
+import seaborn as sns # estáticas
+import matplotlib.pyplot as plt
+from sklearn.metrics import mean_absolute_percentage_error
+import numpy as np
+import holidays
+warnings.filterwarnings('ignore')
+from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import ParameterGrid
+from prophet.diagnostics import cross_validation
+from prophet.diagnostics import performance_metrics
+
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+# Funções
+## Função grid search
+def grid_search(y_train, y_test, params_grid, holidays = None,verbose = False):
+                 
+    grid = ParameterGrid(params_grid)
+    
+    #model_parameters = pd.DataFrame(columns = ['MAPE','Parameters'])
+    mape = []
+    parameters = []
+    for p in grid:
+        train_model =Prophet(**p,
+                         weekly_seasonality=True,
+                         daily_seasonality = False,
+                         yearly_seasonality = False,
+                         interval_width=0.95,
+                         holidays=holidays)
+
+        train_model.add_country_holidays(country_name='BR')
+        train_model.fit(y_train)
+        
+        test_forecast = train_model.make_future_dataframe(periods=y_test.shape[0], include_history = False)
+        test_forecast = train_model.predict(test_forecast)
+
+        #Calcula erro
+        MAPE = mean_absolute_percentage_error(y_test['y'],abs(test_forecast['yhat']))
+
+        if verbose:
+            print('Mean Absolute Percentage Error(MAPE)------------------------------------',MAPE)
+        
+        mape.append(MAPE)
+        parameters.append(p)
+    model_parameters = pd.DataFrame({'MAPE':mape, 'Parameters' : parameters})
+        #model_parameters = model_parameters.append({'MAPE':MAPE,'Parameters':p},ignore_index=True)
+
+    params = model_parameters[model_parameters.MAPE == model_parameters.MAPE.min()].Parameters.values[0]
+        
+    return params, model_parameters
+## Função cross validation
+def grid_search_cross(y_train, params_grid, holidays):
+
+    grid = ParameterGrid(params_grid)
+
+    mape = []
+    parameters = []
+    # Use cross validation to evaluate all parameters
+    for params in grid:
+        m = Prophet(**params, 
+                    weekly_seasonality=False,
+                    daily_seasonality = False,
+                    yearly_seasonality = True,
+                    holidays=holidays,
+                    interval_width=0.95).fit(y_train)  # Fit model with given params
+
+        df_cv = cross_validation(m, 
+                                initial='180 days', 
+                                period='60 days',
+                                horizon='30 days', 
+                                parallel="processes")
+                                
+        df_p = performance_metrics(df_cv, rolling_window=1)
+
+        
+        mape.append(df_p['mape'].values[0])
+        parameters.append(params)
+    model_parameters = pd.DataFrame({'MAPE':mape, 'Parameters' : parameters})
+        #model_parameters = model_parameters.append({'MAPE':MAPE,'Parameters':p},ignore_index=True)
+
+    params = model_parameters[model_parameters.MAPE == model_parameters.MAPE.min()].Parameters.values[0]
+        
+    return params, model_parameters
+## Função backtest
+datas_limite = ['2022-12-31', '2023-01-31', '2023-02-28', '2023-03-31', '2023-04-30', '2023-05-31', '2023-06-30',
+                '2023-07-31', '2023-08-31', '2023-09-30', '2023-10-31', '2023-11-30', '2023-12-31']
+def backtest(df_prophet, params_grid, feriados, datas_limite):
+    
+    forecast_all = pd.DataFrame()
+    #, 'CR', 'CP', 'D'
+    for dt in datas_limite:
+        produto = 'C'
+        data_fim = pd.to_datetime(dt) + relativedelta(months=1)
+        bt = (data_fim - pd.to_datetime(dt)).days
+
+        df = df_prophet[(df_prophet['produto'] == produto) & (df_prophet['ds'] <= dt)][['ds','y']]
+        print(f'Data {df.ds.max()}')
+        y_train, y_test = train_test_split(df, train_size=0.9, shuffle = False)  # extraindo base de treino e teste credito
+        params, df_parameters = grid_search(y_train, y_test, params_grid, holidays = feriados,verbose = False)
+
+        model = Prophet(**params, weekly_seasonality = True, interval_width=0.95, holidays = feriados)
+        model.add_country_holidays(country_name='BR')
+        model.fit(df)    #treinar o modelo
+        
+        forecast = model.make_future_dataframe(periods = bt, include_history=False)   #criando a base para projetar
+        print(f'Data {forecast.ds.min()}')
+        forecast = model.predict(forecast)  #testando
+        forecast['produto'] = produto
+
+        forecast_all = pd.concat([forecast_all, forecast])
+    
+    return forecast_all
+# Importando arquivos e ajustando
+df = pd.read_excel(r"TB_FATURAMENTO 2.xlsx")   #ler documento
+df = df.groupby(['produto','DATA']).sum('FAT').reset_index()   #ajustando e agrupando
+df_prophet = df
+df_prophet.rename(columns={'DATA': 'ds', 'FAT': 'y'}, inplace=True) 
+df_prophet = pd.crosstab(index = df_prophet.ds, columns = df_prophet.produto, values = df_prophet.y, aggfunc = 'max').reset_index()  #transformar linha em colunas
+df_prophet['C'] = df_prophet['CP'] + df_prophet['CR']
+df_prophet = df_prophet.melt('ds', var_name='produto', value_name='y')
+df_prophet.sort_values(by=['produto','ds'], inplace=True)
+#Usando o prophet para ajustar conforme modelo prophet solicita, separei por produto
+
+df_D = df_prophet[df_prophet['produto'] == 'D'][['ds','y']]
+df_CP = df_prophet[df_prophet['produto'] == 'CP'][['ds','y']]
+df_CR = df_prophet[df_prophet['produto'] == 'CR'][['ds','y']]
+df_C = df_prophet[df_prophet['produto'] == 'C'][['ds','y']]
+df_prophet.head()    #acabou dataprep aqui!
+# Treino e Teste
+## Extraindo a base de treino e teste
+y_train_D, y_test_D = train_test_split(df_D, train_size=0.9, shuffle = False)   # extraindo base de treino e teste debito
+y_train_C, y_test_C = train_test_split(df_C, train_size=0.9, shuffle = False)   # extraindo base de treino e teste credito
+y_train_CP, y_test_CP = train_test_split(df_CP, train_size=0.9, shuffle = False)   # extraindo base de treino e teste psj
+y_train_CR, y_test_CR = train_test_split(df_CR, train_size=0.9, shuffle = False)   # extraindo base de treino e teste rotativo
+## Base Geral de Feriados
+feriado_bf = pd.DataFrame({'holiday' : 'black_friday', 
+                          'ds' : pd.to_datetime(['2021-11-24', '2022-11-24', '2023-11-24']),
+                          'lower_window': -6,
+                          'upper_window' : 4})
+feriado_maes = pd.DataFrame({'holiday' : 'dia_das_maes', 
+                          'ds' : pd.to_datetime(['2021-05-09', '2022-05-08', '2023-05-14']),
+                          'lower_window': -6,
+                          'upper_window' : 4})
+feriado_pais = pd.DataFrame({'holiday' : 'dia_dos_pais', 
+                          'ds' : pd.to_datetime(['2021-08-08', '2022-08-14', '2023-08-13']),
+                          'lower_window': -6,
+                          'upper_window' : 4})
+feriado_namorados = pd.DataFrame({'holiday' : 'dia_dos_namorados', 
+                          'ds' : pd.to_datetime(['2021-06-12', '2022-06-12', '2023-06-12']),
+                          'lower_window': -6,
+                          'upper_window' : 4})
+feriado_natal = pd.DataFrame({'holiday' : 'dia_natal', 
+                          'ds' : pd.to_datetime(['2021-12-25', '2022-12-25', '2023-12-25']),
+                          'lower_window': -6,
+                          'upper_window' : 4})
+feriado_ano_novo = pd.DataFrame({'holiday' : 'ano_novo', 
+                          'ds' : pd.to_datetime(['2021-01-01', '2022-01-01', '2023-01-01']),
+                          'lower_window': -6,
+                          'upper_window' : 4})
+feriado_tiradentes = pd.DataFrame({'holiday' : 'tiradentes', 
+                          'ds' : pd.to_datetime(['2021-01-21', '2022-04-21', '2023-04-21']),
+                          'lower_window': -6,
+                          'upper_window' : 4})
+feriado_trabalhador = pd.DataFrame({'holiday' : 'dia_trabalhador', 
+                          'ds' : pd.to_datetime(['2021-05-01', '2022-05-01', '2023-05-01']),
+                          'lower_window': -6,
+                          'upper_window' : 4})
+feriado_patria = pd.DataFrame({'holiday' : 'dia_patria', 
+                          'ds' : pd.to_datetime(['2021-09-07', '2022-09-07', '2023-09-07']),
+                          'lower_window': -6,
+                          'upper_window' : 4})
+feriado_finados = pd.DataFrame({'holiday' : 'dia_finados', 
+                          'ds' : pd.to_datetime(['2021-11-02', '2022-11-02', '2023-11-02']),
+                          'lower_window': -6,
+                          'upper_window' : 4})
+feriado_cnegra = pd.DataFrame({'holiday' : 'dia_cnegra', 
+                          'ds' : pd.to_datetime(['2021-11-20', '2022-11-20', '2023-11-20']),
+                          'lower_window': -6,
+                          'upper_window' : 4})
+feriado_consumidor = pd.DataFrame({'holiday' : 'dia_consumidor', 
+                          'ds' : pd.to_datetime(['2021-03-15', '2022-03-15', '2023-03-15']),
+                          'lower_window': -6,
+                          'upper_window' : 4})
+feriado_pascoa = pd.DataFrame({'holiday' : 'dia_pascoa', 
+                          'ds' : pd.to_datetime(['2021-03-31', '2022-03-31', '2023-03-31']),
+                          'lower_window': -6,
+                          'upper_window' : 4})
+feriado_cliente = pd.DataFrame({'holiday' : 'dia_cliente', 
+                          'ds' : pd.to_datetime(['2021-09-15', '2022-09-15', '2023-09-15']),
+                          'lower_window': -6,
+                          'upper_window' : 4})
+feriado_cyber = pd.DataFrame({'holiday' : 'dia_cyber', 
+                          'ds' : pd.to_datetime(['2021-12-02', '2022-12-02', '2023-12-02']),
+                          'lower_window': -6,
+                          'upper_window' : 4})
+feriado_mulher = pd.DataFrame({'holiday' : 'dia_mulher', 
+                          'ds' : pd.to_datetime(['2021-03-08', '2022-03-08', '2023-03-08']),
+                          'lower_window': -6,
+                          'upper_window' : 4})
+feriado_bruxa = pd.DataFrame({'holiday' : 'dia_bruxa', 
+                          'ds' : pd.to_datetime(['2021-10-31', '2022-10-31', '2023-10-31']),
+                          'lower_window': -6,
+                          'upper_window' : 4})
+feriados = pd.concat([feriado_bf, feriado_maes, feriado_pais, feriado_namorados, feriado_natal, feriado_ano_novo, feriado_tiradentes, 
+                      feriado_trabalhador, feriado_patria, feriado_finados, feriado_cnegra , feriado_consumidor, 
+                      feriado_pascoa, feriado_cliente, feriado_cyber, feriado_mulher, feriado_bruxa])
+feriados = pd.concat([feriado_bf, feriado_maes, feriado_pais, feriado_namorados])
+## Tuning dos parâmetros (turbinar e trazer os menores erros do modelo)
+
+
+params_grid = {'seasonality_mode':('additive','multiplicative'),
+          'holidays_prior_scale' : [0.01,0.1,1,10],
+          'changepoint_prior_scale':[0.001,0.02,0.05,0.2,0.35,0.5],
+          'seasonality_prior_scale': [0.01, 0.1, 1.0, 10.0]
+            }
+datas_limite = ['2023-01-01', '2023-02-01', '2023-03-01', '2023-04-01', '2023-05-01', '2023-06-01', '2023-07-01',
+                '2023-08-01', '2023-09-01', '2023-10-01', '2023-11-01', '2023-12-01']
+forecast_all = pd.DataFrame()
+#, 'CR', 'CP', 'D'
+for dt in datas_limite:
+    produto = 'CP'
+    data_fim = pd.to_datetime(dt) + relativedelta(months=1)
+    bt = (data_fim - pd.to_datetime(dt)).days
+
+    df = df_prophet[(df_prophet['produto'] == produto) & (df_prophet['ds'] < dt)][['ds','y']]
+    print(f'Data {df.ds.max()}')
+    y_train, y_test = train_test_split(df, train_size=0.9, shuffle = False)  # extraindo base de treino e teste credito
+    params, df_parameters = grid_search(y_train, y_test, params_grid, holidays = feriados,verbose = False)
+
+    model = Prophet(**params, weekly_seasonality = True, interval_width=0.95, holidays = feriados)
+    model.add_country_holidays(country_name='BR')
+    model.fit(df)    #treinar o modelo
+    
+    forecast = model.make_future_dataframe(periods = 31, include_history=False)   #criando a base para projetar
+    print(f'Data {forecast.ds.min()}')
+    forecast = model.predict(forecast)  #testando
+    forecast['produto'] = produto
+
+    forecast_all = pd.concat([forecast_all, forecast])
+#forecast_all[['ds', 'yhat']].to_excel('backtest_forecast_1.xlsx')
+forecast_all[['ds', 'yhat', 'yhat_lower', 'yhat_upper', 'produto']].to_excel('backtest_forecast_CP.xlsx')
+#params_deb, df_parameters_deb = grid_search_cross(y_train_D, params_grid, holidays)
+params_deb, df_parameters_deb = grid_search(y_train_D, y_test_D, params_grid, bt = y_test_D.shape[0], holidays = feriados,verbose = False)
+### Débito
+model_d = Prophet(**params_deb, weekly_seasonality = True, interval_width=0.95, holidays = feriados)
+model_d.add_country_holidays(country_name='BR')
+model_d.fit(y_train_D)    #treinar o modelo
+train_deb_forecast = model_d.make_future_dataframe(periods = y_test_D.shape[0], include_history=False)   #criando a base para projetar
+train_deb_forecast = model_d.predict(y_test_D)  #testando
+train_deb_forecast['MES_ANO'] = train_deb_forecast['ds'].apply(lambda x: x.strftime('%m-%Y')) 
+train_deb_forecast['Produto']='D'
+train_deb_forecast=train_deb_forecast.rename(columns={'ds':'Data'})
+train_deb_forecast.sort_values(by='Data', ascending=True, inplace=True)
+train_deb_forecast.head()
+### Validando o modelo - Débito
+y_true = y_test_D['y']
+y_pred = train_deb_forecast['yhat']
+mean_absolute_percentage_error(y_true, y_pred)
+### Gráfico
+plt.figure(figsize = (20,10))
+sns.lineplot(data = df_D, x = 'ds', y = 'y', label = 'Real')
+sns.lineplot(data = train_deb_forecast, x = 'Data', y = 'yhat', label='Projecao')
+### Tuning dos parâmetros Credito sem quebras (turbinar e trazer os menores erros do modelo)
+params_grid = {'seasonality_mode':('additive','multiplicative'),
+          'holidays_prior_scale' : [0.01,0.1,1,10],
+          'changepoint_prior_scale':[0.001,0.02,0.05,0.2,0.35,0.5],
+          'seasonality_prior_scale': [0.01, 0.1, 1.0, 10.0]
+            }
+params_credito, df_parameters_credito = grid_search_cross(y_train_C, params_grid, holidays)
+### CREDITO SEM QUEBRAS
+model_credito = Prophet(**params_credito, weekly_seasonality = True, interval_width=0.95, holidays = feriados)
+model_credito.add_country_holidays(country_name='BR')
+model_credito.fit(y_train_C)
+train_credito_forecast = model_credito.make_future_dataframe(periods = y_test_C.shape[0], include_history=False)
+train_credito_forecast = model_credito.predict(y_test_C)
+train_credito_forecast['MES_ANO'] = train_credito_forecast['ds'].apply(lambda x: x.strftime('%m-%Y')) 
+train_credito_forecast['Produto']='C'
+train_credito_forecast = train_credito_forecast.rename(columns={'ds':'Data'})
+### validando o modelo - CREDITO SEM QUEBRAS
+y_true = y_test_C['y']
+y_pred = train_credito_forecast['yhat']
+mean_absolute_percentage_error(y_true, y_pred)
+## Gráfico CREDITO SEM QUEBRAS
+plt.figure(figsize = (20,10))
+sns.lineplot(data = df_C, x = 'ds', y = 'y', label = 'Real')
+sns.lineplot(data = train_credito_forecast, x = 'Data', y = 'yhat', label='Projecao')
+### Tuning dos parâmetros (turbinar e trazer os menores erros do modelo)
+params_grid = {'seasonality_mode':('additive','multiplicative'),
+          'holidays_prior_scale' : [0.01,0.1,1,10],
+          'changepoint_prior_scale':[0.001,0.02,0.05,0.2,0.35,0.5],
+          'seasonality_prior_scale': [0.01, 0.1, 1.0, 10.0]
+            }
+params_psj, df_parameters_psj = grid_search(y_train_CP, y_test_CP, params_grid, bt = y_test_CP.shape[0], holidays = feriados,verbose = False)
+### PSJ
+model_psj = Prophet(**params_deb, weekly_seasonality = True, interval_width=0.95, holidays = feriados)
+model_psj.add_country_holidays(country_name='BR')
+model_psj.fit(y_train_CP)
+train_psj_forecast = model_psj.make_future_dataframe(periods = y_test_CP.shape[0], include_history=False)
+train_psj_forecast = model_psj.predict(y_test_CP)
+train_psj_forecast['MES_ANO'] = train_psj_forecast['ds'].apply(lambda x: x.strftime('%m-%Y')) 
+train_psj_forecast['Produto']='CP'
+train_psj_forecast=train_psj_forecast.rename(columns={'ds':'Data'})
+### validando o modelo - PSJ
+y_true = y_test_CP['y']
+y_pred = train_psj_forecast['yhat']
+mean_absolute_percentage_error(y_true, y_pred)
+## Gráfico
+plt.figure(figsize = (20,10))
+sns.lineplot(data = df_CP, x = 'ds', y = 'y', label = 'Real')
+sns.lineplot(data = train_psj_forecast, x = 'Data', y = 'yhat', label='Projecao')
+### Tuning dos parâmetros (turbinar e trazer os menores erros do modelo)
+
+params_grid = {'seasonality_mode':('additive','multiplicative'),
+          'holidays_prior_scale' : [0.01,0.1,1,10],
+          'changepoint_prior_scale':[0.001,0.02,0.05,0.2,0.35,0.5],
+          'seasonality_prior_scale': [0.01, 0.1, 1.0, 10.0]
+            }
+params_rot, df_parameters_rot = grid_search(y_train_CR, y_test_CR, params_grid, bt = y_test_CR.shape[0], holidays = feriados,verbose = False)
+### ROT
+model_rot = Prophet(**params_rot, weekly_seasonality = True, interval_width=0.95, holidays = feriados)
+
+model_rot.add_country_holidays(country_name='BR')
+model_rot.fit(y_train_CR)
+train_rot_forecast = model_rot.make_future_dataframe(periods = y_test_CR.shape[0], include_history=False)
+train_rot_forecast = model_rot.predict(y_test_CR)
+train_rot_forecast['MES_ANO'] = train_rot_forecast['ds'].apply(lambda x: x.strftime('%m-%Y'))
+train_rot_forecast['Produto']='CR'
+train_rot_forecast=train_rot_forecast.rename(columns={'ds':'Data'})
+### Validando o modelo - CR
+y_true = y_test_CR['y']
+y_pred = train_rot_forecast['yhat']
+mean_absolute_percentage_error(y_true, y_pred)
+## Gráfico
+plt.figure(figsize = (20,10))
+sns.lineplot(data = df_CR, x = 'ds', y = 'y', label = 'Real')
+sns.lineplot(data = train_rot_forecast, x = 'Data', y = 'yhat', label='Projecao')
+### Concatenar
+train_forecast_f = pd.concat([train_deb_forecast, train_credito_forecast])
+train_forecast_f = df.merge(train_forecast_f[['Data', 'Produto', 'yhat', 'yhat_lower', 'yhat_upper']],how = 'left', left_on=['ds', 'produto'],right_on = ['Data', 'Produto'])
+#train_forecast_final = pd.concat([train_deb_forecast, train_psj_forecast, train_rot_forecast])
+#train_forecast_final=df.merge(train_forecast_final[['Data', 'Produto', 'yhat', 'yhat_lower', 'yhat_upper']],how = 'left', left_on=['ds', 'produto'],right_on = ['Data', 'Produto'])
+## Projeção Débito
+m_deb = Prophet(**params_deb, weekly_seasonality = True, interval_width=0.95, holidays = feriados)
+m_deb.fit(df_D[df_D.ds <= '2022-12-31'])
+f = m_deb.make_future_dataframe(periods=400,include_history=False)
+forecast_deb = m_deb.predict(f)
+forecast_deb[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
+forecast_deb.rename(columns={'ds': 'Data', 'yhat': 'Projetado', 'yhat_lower': 'Limite_Inferior', 'yhat_upper': 'Limite_Superior'}, inplace=True) 
+forecast_deb['Produto'] = 'D'
+forecast_deb[['Produto', 'Data', 'Projetado', 'Limite_Inferior', 'Limite_Superior']] 
+## Projeção Crédito SEM QUEBRAS
+
+m_credito = Prophet(**params_credito, weekly_seasonality = True, interval_width=0.95, holidays = feriados)
+m_credito.fit(df_C[df_C.ds <= '2022-12-31'])  #pode mudar a data ate data limite para estudo
+f = m_credito.make_future_dataframe(periods=400,include_history=False)
+forecast_credito = m_credito.predict(f)
+forecast_credito[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
+forecast_credito.rename(columns={'ds': 'Data', 'yhat': 'Projetado', 'yhat_lower': 'Limite_Inferior', 'yhat_upper': 'Limite_Superior'}, inplace=True) 
+forecast_credito['Produto'] = 'C'
+forecast_credito[['Produto','Data', 'Projetado', 'Limite_Inferior', 'Limite_Superior']]
+## Projeção Crédito PSJ
+
+#m_psj = Prophet(**params_psj, weekly_seasonality = True, interval_width=0.95, holidays = feriados)
+m_psj.fit(df_CP[df_CP.ds <= '2023-12-31'])
+f = m_psj.make_future_dataframe(periods=90,include_history=False)
+forecast_psj = m_psj.predict(f)
+forecast_psj[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
+forecast_psj.rename(columns={'ds': 'Data', 'yhat': 'Projetado', 'yhat_lower': 'Limite_Inferior', 'yhat_upper': 'Limite_Superior'}, inplace=True) 
+forecast_psj['Produto'] = 'CP'
+forecast_psj[['Produto','Data', 'Projetado', 'Limite_Inferior', 'Limite_Superior']]
+## Projeção Crédito ROT
+
+m_rot = Prophet(**params_rot, weekly_seasonality = True, interval_width=0.95, holidays = feriados)
+m_rot.fit(df_CR[df_CR.ds <= '2022-12-31'])
+f = m_rot.make_future_dataframe(periods=400,include_history=False)
+forecast_rot = m_rot.predict(f)
+forecast_rot[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
+forecast_rot.rename(columns={'ds': 'Data', 'yhat': 'Projetado', 'yhat_lower': 'Limite_Inferior', 'yhat_upper': 'Limite_Superior'}, inplace=True) 
+forecast_rot['Produto'] = 'CR'
+forecast_rot[['Produto', 'Data', 'Projetado', 'Limite_Inferior', 'Limite_Superior']]
+## Concatenando 
+m_total = pd.concat([forecast_deb, forecast_credito])
+#m_total = pd.concat([forecast_deb, forecast_psj, forecast_rot])
+m_total[['Produto', 'Data', 'Projetado', 'Limite_Inferior', 'Limite_Superior']]
+df_prophet.rename(columns={'produto': 'Produto', 'ds': 'Data', 'y': 'Valor_Real'},inplace = True)
+m_total = pd.concat([m_total, df_prophet ])
+m_total[['Produto', 'Data', 'Valor_Real', 'Projetado', 'Limite_Inferior', 'Limite_Superior']].sort_values(by=['Produto', 'Data'])
+m_total[['Produto', 'Data', 'Valor_Real', 'Projetado', 'Limite_Inferior', 'Limite_Superior']].to_excel('tb_faturamento_20233.xlsx', index=False)
+# Gráficos (total)
+plt.figure(figsize=(20,10))     #ajustando o tamanho do grafico
+sns.lineplot(x = m_total[m_total['Produto'] == 'D']['Data'], y = m_total[m_total['Produto'] == 'D']['Projetado'])
+sns.lineplot(x = m_total[m_total['Produto'] == 'D']['Data'], y = m_total[m_total['Produto'] == 'D']['Valor_Real'])
+# Treino 
+# Teste
+# Validação do Modelo
+def grid_search_cross(y_train, params_grid, lockdows):
+
+    grid = ParameterGrid(params_grid)
+
+    model_parameters = pd.DataFrame(columns = ['MAPE','Parameters'])
+
+    # Use cross validation to evaluate all parameters
+    for params in grid:
+        m = Prophet(**params, 
+                    weekly_seasonality=False,
+                    daily_seasonality = False,
+                    yearly_seasonality = True,
+                    holidays=lockdows,
+                    interval_width=0.95).fit(y_train)  # Fit model with given params
+
+        df_cv = cross_validation(m, 
+                                initial='1095 days', 
+                                period='180 days',
+                                horizon='365 days', 
+                                parallel="processes")
+                                
+        df_p = performance_metrics(df_cv, rolling_window=1)
+
+        model_parameters = model_parameters.append({'MAPE':df_p['mape'].values[0],'Parameters':params},ignore_index=True)
+
+    params = model_parameters[model_parameters.MAPE == model_parameters.MAPE.min()].Parameters.values[0]
+
+    return params, model_parameters
+# cross validation do modelo
+#from sklearn.model_selection import KFold
+#from sklearn.model_selection import cross_val_score
+#from sklearn.linear_model import LinearRegression
+#num_folds = 3
+#kf = KFold(n_splits=num_folds)
+#model = LinearRegression()
+#scores = cross_val_score(model, 
+#from fbprophet.diagnostics import cross_validation, performance_metrics
+#from fbprophet.plot import plot_cross_validation_metric
+#df_cv = cross_validation(model, horizon = '52 W', parallel='processes',)
+
