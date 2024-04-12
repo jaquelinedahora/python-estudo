@@ -1,0 +1,220 @@
+import pandas as pd
+import os
+import openpyxl
+import calendar, datetime
+import numpy as np
+import datetime
+#from datetime import date, time, datetime, timedelta
+#cFile = openpyxl.load_workbook(r'base/1_Projeta_Paula_Maio_2022.xlsx', read_only= True)
+#sheet = cFile.get_sheet_by_name('cSheet')
+#pd.read_excel(r'base/1_Projeta_Paula_Maio_2022.xlsx', sheet_name = 'Gráficos')
+pd.set_option('display.max_columns', None)
+LISTA_COLUNAS = [
+'TOTAL_VALOR_REAL', 'TOTAL_PROJETADO', 'TOTAL_ANO ANTERIOR',
+'AGRONEGOCIO_VALOR_REAL', 'AGRONEGOCIO_PROJETADO', 'AGRONEGOCIO_ANO ANTERIOR',
+'CIB_VALOR_REAL', 'CIB_PROJETADO', 'CIB_ANO ANTERIOR',
+'IMOBILIARIO_VALOR_REAL', 'IMOBILIARIO_PROJETADO', 'IMOBILIARIO_ANO ANTERIOR',
+'ESTRANGEIRO_VALOR_REAL', 'ESTRANGEIRO_PROJETADO', 'ESTRANGEIRO_ANO ANTERIOR',
+'LARGE_VALOR_REAL', 'LARGE_PROJETADO', 'LARGE_ANO ANTERIOR',
+'MIDDLE_VALOR_REAL', 'MIDDLE_PROJETADO', 'MIDDLE_ANO ANTERIOR',
+'NONCORE_VALOR_REAL', 'NONCORE_PROJETADO', 'NONCORE_ANO ANTERIOR',
+'WMS_VALOR_REAL', 'WMS_PROJETADO', 'WMS_ANO ANTERIOR',
+'BUSINESSNCC_VALOR_REAL', 'BUSINESSNCC_PROJETADO', 'BUSINESSNCC_ANO ANTERIOR',
+'BUSINESSDOM_VALOR_REAL', 'BUSINESSDOM_PROJETADO', 'BUSINESSDOM_ANO ANTERIOR',
+'BUSINESSNDOM_VALOR_REAL', 'BUSINESSNDOM_PROJETADO', 'BUSINESSNDOM_ANO ANTERIOR',
+'EMPREEMDA4NCC_VALOR_REAL', 'EMPREEMDA4NCC_PROJETADO', 'EMPREEMDA4NCC_ANO ANTERIOR',
+'EMPREENDA4DOM_VALOR_REAL', 'EMPREENDA4DOM_PROJETADO', 'EMPREENDA4DOM_ANO ANTERIOR',
+'EMPREENDA4NDOM_VALOR_REAL', 'EMPREENDA4NDOM_PROJETADO', 'EMPREENDA4NDOM_ANO ANTERIOR',
+'EMPREENDA5NCC_VALOR_REAL', 'EMPREENDA5NCC_PROJETADO', 'EMPREENDA5NCC_ANO ANTERIOR',
+'EMPREENDA5DOM_VALOR_REAL', 'EMPREENDA5DOM_PROJETADO', 'EMPREENDA5DOM_ANO ANTERIOR',
+'EMPREENDA5NDOM_VALOR_REAL', 'EMPREENDA5NDOM_PROJETADO', 'EMPREENDA5NDOM_ANO ANTERIOR',
+'PFDOM_VALOR_REAL', 'PFDOM_PROJETADO', 'PFDOM_ANO ANTERIOR',
+'PFNDOM_VALOR_REAL', 'PFNDOM_PROJETADO', 'PFNDOM_ANO ANTERIOR',
+'PFNCC_VALOR_REAL', 'PFNCC_PROJETADO', 'PFNCC_ANO ANTERIOR',
+'PRONCC_VALOR_REAL', 'PRONCC_PROJETADO', 'PRONCC_ANO ANTERIOR',
+'PRODOM_VALOR_REAL', 'PRODOM_PROJETADO', 'PRODOM_ANO ANTERIOR',
+'PRONDOM_VALOR_REAL', 'PRONDOM_PROJETADO', 'PRONDOM_ANO ANTERIOR',
+'REESTRUTURACAODOM_VALOR_REAL', 'REESTRUTURACAODOM_PROJETADO', 'REESTRUTURACAODOM_ANO ANTERIOR',
+'REESTRUTURACAONDOM_VALOR_REAL', 'REESTRUTURACAONDOM_PROJETADO', 'REESTRUTURACAONDOM_ANO ANTERIOR',
+'TOPNCC_VALOR_REAL', 'TOPNCC_PROJETADO', 'TOPNCC_ANO ANTERIOR',
+'TOPDOM_VALOR_REAL', 'TOPDOM_PROJETADO', 'TOPDOM_ANO ANTERIOR',
+'TOPNDOM_VALOR_REAL', 'TOPNDOM_PROJETADO', 'TOPNDOM_ANO ANTERIOR',
+'ATACADO_VALOR_REAL', 'ATACADO_PROJETADO', 'ATACADO_ANO ANTERIOR',
+'VAREJO_VALOR_REAL', 'VAREJO_PROJETADO', 'VAREJO_ANO ANTERIOR',
+'BANCO_VALOR_REAL', 'BANCO_PROJETADO', 'BANCO_ANO ANTERIOR',
+'MONOLINER_VALOR_REAL', 'MONOLINER_PROJETADO', 'MONOLINER_ANO ANTERIOR',
+'FYF_TOTAL', 'FYF_ATK', 'FYF_VAR', 'FYF_VAR_DOM', 'FYF_VAR_NDOM',
+'FAT_ICM_TOTAL', 'FAT_ICM_ATK', 'FAT_ICM_VAR', 'FAT_ICM_VAR_DOM', 'FAT_ICM_VAR_NDOM']
+#colocar todos os arquivos projeta Paula em uma pasta separada
+
+#nome da pasta
+dir = r'../data/data_quicksights/'
+
+df_historico = pd.DataFrame()
+
+for file_path in os.listdir(dir):
+  
+    print(file_path)  
+    
+    if file_path.endswith('.xlsx'):
+        
+       
+        #criar a lista com as colunas
+        lista_colunas = []
+        lista_blocos = []
+        nome_bloco = ""
+        # names = lista_colunas
+        temp = pd.read_excel(dir+file_path, sheet_name = 'Gráficos')
+        
+        for col in temp.columns[3:]:
+           
+            col = str(col)
+            
+            if not col.startswith('Unnamed'):
+                nome_bloco = col      
+                lista_blocos.append(nome_bloco)
+                
+            else:
+                lista_blocos.append(nome_bloco)
+      
+        temp = pd.read_excel(dir+file_path, sheet_name = 'Gráficos', header = 1, )
+                           
+        novas_colunas = list(pd.Series(temp.columns[3:]).astype('str')+'_'+ pd.Series(lista_blocos))
+   
+        temp = temp.iloc[:,3:]
+        temp.columns = novas_colunas
+        
+        for col in temp:
+            col = str(col)
+            if col.startswith('Unnamed'):
+                temp.drop(columns = col, inplace=True)
+        
+        #gera lista de dias do mês
+        meses = {'Janeiro' : 1, 
+                 'Fevereiro' : 2, 
+                 'Março' : 3, 
+                 'Abril' : 4, 
+                 'Maio' : 5, 
+                 'Junho' : 6,
+                 'Julho' : 7,
+                 'Agosto' : 8,
+                 'Setembro' : 9, 
+                 'Outubro' : 10, 
+                 'Novembro' : 11,
+                 'Dezembro' :12}
+
+        year = int(file_path.split(sep='_')[4].split(sep='.')[0])
+        month = file_path.split(sep='_')[3]
+        month = int(meses[month])
+        num_days = calendar.monthrange(year, month)[1]
+        days = [datetime.date(year, month, day) for day in range(1, num_days+1)]
+
+        temp = temp.head(num_days)
+        temp['DATA'] = days
+
+        df_historico = pd.concat([temp, df_historico], ignore_index=True)
+
+df_historico = df_historico.melt(id_vars = 'DATA')
+df_historico['FLAGTIPO'] = df_historico.variable.str.split('_',expand=True)[0]
+df_historico['FLAGQUEBRA'] = df_historico.variable.str.split('_',expand=True)[1]
+df_historico['ANO'] = df_historico['DATA'].apply(lambda x: x.strftime("%Y-%m-%d")[:5])
+df_historico['FLAGTIPO_AJUSTADA'] = np.where(df_historico['ANO'] == df_historico['FLAGTIPO'].str[:5], 'PROJECAO', df_historico['FLAGTIPO'])
+df_historico['FLAGTIPO_AJUSTADA'] = np.where(df_historico['ANO'].str[:4] == df_historico['FLAGTIPO_AJUSTADA'].str[:4], 'VALOR_REAL', df_historico['FLAGTIPO_AJUSTADA'])
+df_historico['FLAGTIPO_AJUSTADA'] = np.where((pd.to_numeric(df_historico['ANO'].str[:4])-1).astype('str') == df_historico['FLAGTIPO_AJUSTADA'].str[:4], 'VALOR_REAL_ANTERIOR', df_historico['FLAGTIPO_AJUSTADA'])
+df_historico['FLAGTIPO_AJUSTADA'] = df_historico.groupby('ATK')['FLAGTIPO'].transform('first')
+
+
+df_historico
+df_historico.to_excel('base.xlsx')
+filtro_quebra = dados_selecionados['FLAGTIPO_AJUSTADA'] == 'VALOR_REAL', 'FYF_TOTAL', 'BANCO_VALOR_REAL', 'BANCO_PROJETADO', 
+'BANCO_ANO ANTERIOR', 'MONOLINER_VALOR_REAL', 'MONOLINER_PROJETADO', 'MONOLINER_ANO ANTERIOR','FYF_ATK', 
+'FYF_VAR', 'ATACADO_VALOR_REAL', 'ATACADO_PROJETADO', 'ATACADO_ANO ANTERIOR', 
+'VAREJO_VALOR_REAL', 'VAREJO_PROJETADO', 'VAREJO_ANO ANTERIOR'
+
+
+df_historico[df_historico.FLAGQUEBRA != 'TOTAL']
+
+#PEGA A DATA E TRANFORMA STRING ok
+#OS 4 PRIMEIROS DIGITOS DA DATA ok
+# VAI COMPARAR COM OS 4 PRIMEIROS DIGITOS DA COLUNA FLAGTIPO
+#FAZ OS IFS
+df_historico.rename(columns={'2023': 'Valor Real', '2023- Projeção': 'Projeção', '2022': 'Valor Real ano anterior'  })
+df_historico.columns
+ 
+['2023','2023- Projeção','2022',		
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',	
+'2023','2023- Projeção','2022',
+'2023','2023- Projeção','2022',
+'2023','2023- Projeção','2022',
+'TOTAL', 'ATK', 'VAR', 'VAR - DOM',	'VAR - NDOM',
+'TOTAL', 'ATK', 'VAR', 'VAR - DOM', 'VAR - NDOM']
+df_historico['FLAGTIPO_AJUSTADA'] = np.where(df_historico['ANO'] == df_historico['FLAGTIPO'].str[:5], 'PROJECAO', df_historico['FLAGTIPO'])
+df_historico['FLAGTIPO_AJUSTADA'] = np.where(df_historico['ANO'].str[:4] == df_historico['FLAGTIPO_AJUSTADA'].str[:4], 'VALOR_REAL', df_historico['FLAGTIPO_AJUSTADA'])
+df_historico['FLAGTIPO_AJUSTADA'] = np.where((pd.to_numeric(df_historico['ANO'].str[:4])-1).astype('str') == df_historico['FLAGTIPO_AJUSTADA'].str[:4], 'VALOR_REAL_ANTERIOR', df_historico['FLAGTIPO_AJUSTADA'])
+df_historico.shape
+#df_historico.columns = 
+
+len([
+'TOTAL_VALOR_REAL', 'TOTAL_PROJETADO', 'TOTAL_ANO ANTERIOR',
+'AGRONEGOCIO_VALOR_REAL', 'AGRONEGOCIO_PROJETADO', 'AGRONEGOCIO_ANO ANTERIOR',
+'CIB_VALOR_REAL', 'CIB_PROJETADO', 'CIB_ANO ANTERIOR',
+'IMOBILIARIO_VALOR_REAL', 'IMOBILIARIO_PROJETADO', 'IMOBILIARIO_ANO ANTERIOR',
+'ESTRANGEIRO_VALOR_REAL', 'ESTRANGEIRO_PROJETADO', 'ESTRANGEIRO_ANO ANTERIOR',
+'LARGE_VALOR_REAL', 'LARGE_PROJETADO', 'LARGE_ANO ANTERIOR',
+'MIDDLE_VALOR_REAL', 'MIDDLE_PROJETADO', 'MIDDLE_ANO ANTERIOR',
+'NONCORE_VALOR_REAL', 'NONCORE_PROJETADO', 'NONCORE_ANO ANTERIOR',
+'WMS_VALOR_REAL', 'WMS_PROJETADO', 'WMS_ANO ANTERIOR',
+'BUSINESSNCC_VALOR_REAL', 'BUSINESSNCC_PROJETADO', 'BUSINESSNCC_ANO ANTERIOR',
+'BUSINESSDOM_VALOR_REAL', 'BUSINESSDOM_PROJETADO', 'BUSINESSDOM_ANO ANTERIOR',
+'BUSINESSNDOM_VALOR_REAL', 'BUSINESSNDOM_PROJETADO', 'BUSINESSNDOM_ANO ANTERIOR',
+'EMPREEMDA4NCC_VALOR_REAL', 'EMPREEMDA4NCC_PROJETADO', 'EMPREEMDA4NCC_ANO ANTERIOR',
+'EMPREENDA4DOM_VALOR_REAL', 'EMPREENDA4DOM_PROJETADO', 'EMPREENDA4DOM_ANO ANTERIOR',
+'EMPREENDA4NDOM_VALOR_REAL', 'EMPREENDA4NDOM_PROJETADO', 'EMPREENDA4NDOM_ANO ANTERIOR',
+'EMPREENDA5NCC_VALOR_REAL', 'EMPREENDA5NCC_PROJETADO', 'EMPREENDA5NCC_ANO ANTERIOR',
+'EMPREENDA5DOM_VALOR_REAL', 'EMPREENDA5DOM_PROJETADO', 'EMPREENDA5DOM_ANO ANTERIOR',
+'EMPREENDA5NDOM_VALOR_REAL', 'EMPREENDA5NDOM_PROJETADO', 'EMPREENDA5NDOM_ANO ANTERIOR',
+'PFDOM_VALOR_REAL', 'PFDOM_PROJETADO', 'PFDOM_ANO ANTERIOR',
+'PFNDOM_VALOR_REAL', 'PFNDOM_PROJETADO', 'PFNDOM_ANO ANTERIOR',
+'PFNCC_VALOR_REAL', 'PFNCC_PROJETADO', 'PFNCC_ANO ANTERIOR',
+'PRONCC_VALOR_REAL', 'PRONCC_PROJETADO', 'PRONCC_ANO ANTERIOR',
+'PRODOM_VALOR_REAL', 'PRODOM_PROJETADO', 'PRODOM_ANO ANTERIOR',
+'PRONDOM_VALOR_REAL', 'PRONDOM_PROJETADO', 'PRONDOM_ANO ANTERIOR',
+'REESTRUTURACAODOM_VALOR_REAL', 'REESTRUTURACAODOM_PROJETADO', 'REESTRUTURACAODOM_ANO ANTERIOR',
+'REESTRUTURACAONDOM_VALOR_REAL', 'REESTRUTURACAONDOM_PROJETADO', 'REESTRUTURACAONDOM_ANO ANTERIOR',
+'TOPNCC_VALOR_REAL', 'TOPNCC_PROJETADO', 'TOPNCC_ANO ANTERIOR',
+'TOPDOM_VALOR_REAL', 'TOPDOM_PROJETADO', 'TOPDOM_ANO ANTERIOR',
+'TOPNDOM_VALOR_REAL', 'TOPNDOM_PROJETADO', 'TOPNDOM_ANO ANTERIOR',
+'ATACADO_VALOR_REAL', 'ATACADO_PROJETADO', 'ATACADO_ANO ANTERIOR',
+'VAREJO_VALOR_REAL', 'VAREJO_PROJETADO', 'VAREJO_ANO ANTERIOR',
+'BANCO_VALOR_REAL', 'BANCO_PROJETADO', 'BANCO_ANO ANTERIOR',
+'MONOLINER_VALOR_REAL', 'MONOLINER_PROJETADO', 'MONOLINER_ANO ANTERIOR',
+'FYF_TOTAL', 'FYF_ATK', 'FYF_VAR', 'FYF_VAR_DOM', 'FYF_VAR_NDOM',
+'FAT_ICM_TOTAL', 'FAT_ICM_ATK', 'FAT_ICM_VAR', 'FAT_ICM_VAR_DOM', 'FAT_ICM_VAR_NDOM'])
